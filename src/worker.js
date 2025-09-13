@@ -181,6 +181,7 @@ function helpText(env){
   // Convert that to the equivalent UTC time for display.
   let utcHour = (23 - off) % 24; if (utcHour < 0) utcHour += 24;
   const utcStr = `${pad2(utcHour)}:59 UTC`;
+// trigger deploy: no-op change
 
   return [
     "⏱ Work Hours Bot",
