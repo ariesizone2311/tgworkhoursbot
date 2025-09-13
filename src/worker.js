@@ -98,19 +98,20 @@ function dateKeyLocal(env, localMs){
   const da= String(d.getUTCDate()).padStart(2,"0");
   return `${y}-${m}-${da}`;
 }
-// Monday start of week in *local* time (computed via TZ offset)
-function weekStartLocal(env, localMs){
+// Start of week = SUNDAY 00:00 (in *local* time determined by TZ_OFFSET)
+function weekStartLocal(env, localMs) {
   const d = new Date(localMs);
-  const dow = (d.getUTCDay() + 6) % 7; // 0..6, 0=Mon
-  const start = new Date(d.getTime() - dow*86400_000);
+  const dow = d.getUTCDay(); // 0 = Sunday, 6 = Saturday
+  const start = new Date(d.getTime() - dow * 86400_000);
   return Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
 }
-// The fully-completed previous local week [Mon..Sun]
-function prevLocalWeekWindow(env, localMs){
-  // Anchor 12h back so if cron runs around boundary we're inside the previous week
-  const anchor = localMs - 12*3600_000;
-  const start = weekStartLocal(env, anchor);        // Mon 00:00 local (UTC ms)
-  const end   = start + 7*86400_000;                // next Mon 00:00 local
+
+// Fully-completed previous local week [Sun..Sat]
+function prevLocalWeekWindow(env, localMs) {
+  // step back a bit so we’re definitely inside the intended week
+  const anchor = localMs - 12 * 3600_000; // -12h
+  const start = weekStartLocal(env, anchor); // Sunday 00:00 local (UTC ms)
+  const end   = start + 7 * 86400_000;       // next Sunday 00:00 local
   return { start, end };
 }
 
@@ -170,18 +171,16 @@ async function sendDocument(env, chat_id, filename, content, mime = "text/csv"){
 function pad2(n){ return String(n).padStart(2, "0"); }
 
 // REPLACE your existing helpText with this
+function pad2(n){ return String(n).padStart(2, "0"); }
+
 function helpText(env){
   const r = rate(env).toFixed(2);
+  const off = tzOffsetHours(env);                 // e.g., PHT = +8
+  const offLabel = `UTC${off>=0?`+${off}`:off}`;
 
-  // local offset (e.g., CET = +1)
-  const off = tzOffsetHours(env);
-  const offLabel = `UTC${off >= 0 ? `+${off}` : off}`;
-
-  // We fire at 23:59 LOCAL every Sunday.
-  // Convert that to the equivalent UTC time for display.
+  // Saturday 23:59 LOCAL → compute equivalent UTC hour for display
   let utcHour = (23 - off) % 24; if (utcHour < 0) utcHour += 24;
   const utcStr = `${pad2(utcHour)}:59 UTC`;
-// trigger deploy: no-op change
 
   return [
     "⏱ Work Hours Bot",
@@ -191,9 +190,10 @@ function helpText(env){
     "/week — show this week’s total (hours + minutes + pay)",
     "/pay — show this week’s pay",
     `/help — show this help (rate: $${r}/hr)`,
-    `Auto: Sunday 23:59 ${offLabel} (= ${utcStr}) → sends pay + CSV, then resets last week.`
+    `Auto: Saturday 23:59 ${offLabel} (= ${utcStr}) → sends pay + CSV, then resets last week (Sun→Sat).`
   ].join("\n");
 }
+
 
 
 async function cmdIn(env, chatId, userId){
