@@ -169,10 +169,6 @@ async function sendDocument(env, chat_id, filename, content, mime = "text/csv"){
 /* -------------------- Commands -------------------- */
 // put this helper just above helpText
 function pad2(n){ return String(n).padStart(2, "0"); }
-
-// REPLACE your existing helpText with this
-function pad2(n){ return String(n).padStart(2, "0"); }
-
 function helpText(env){
   const r = rate(env).toFixed(2);
   const off = tzOffsetHours(env);                 // e.g., PHT = +8
