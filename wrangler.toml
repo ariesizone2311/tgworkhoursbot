@@ -3,15 +3,15 @@ main = "src/worker.js"
 compatibility_date = "2024-09-10"
 workers_dev = true
 
-# Weekly cron: Sunday 23:59 CET (= 22:59 UTC)
+# Weekly cron: Saturday 23:59 PHT (= 15:59 UTC)
 [triggers]
-crons = ["59 22 * * SUN"]
+crons = ["59 15 * * SAT"]
 
-# Bind your existing KV namespace (copy the Namespace ID)
+# Bind your existing KV namespace
 [[kv_namespaces]]
 binding = "HOURS"
 id = "b89428e4fdaa45f59e8bb9373c8392e5"
 
 [vars]
-TZ_OFFSET = "1"     # CET
+TZ_OFFSET = "8"     # PHT (UTC+8)
 PAY_RATE  = "2.5"
