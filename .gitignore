@@ -1,0 +1,7 @@
+# do not upload secrets or local artifacts
+node_modules/
+.env
+data.db
+data.db-*
+dist/
+*.log
