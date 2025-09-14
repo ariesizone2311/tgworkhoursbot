@@ -246,7 +246,7 @@ async function isChatAdmin(env, chatId, userId) {
 function pad2(n){ return String(n).padStart(2, "0"); }
 function helpText(env){
   const r = rate(env).toFixed(2);
-  const off = tzOffsetHours(env);                 // e.g., PHT = +8
+  const off = tzOffsetHours(env);
   const offLabel = `UTC${off>=0?`+${off}`:off}`;
 
   // Saturday 23:59 LOCAL → compute equivalent UTC hour for display
@@ -260,10 +260,12 @@ function helpText(env){
     "/today — show today’s total",
     "/week — show this week’s total (hours + minutes + pay)",
     "/pay — show this week’s pay",
+    "/setrate <rate> — DM: set your own rate; Group: admin must reply to a user’s message",
     `/help — show this help (rate: $${r}/hr)`,
     `Auto: Saturday 23:59 ${offLabel} (= ${utcStr}) → sends pay + CSV, then resets last week (Sun→Sat).`
   ].join("\n");
 }
+
 
 
 
