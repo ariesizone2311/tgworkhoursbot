@@ -28,15 +28,27 @@ export default {
       if (secret !== env.SECRET_TOKEN) return new Response("unauthorized", { status: 401 });
 
       const update = await request.json();
-      const msg = update.message;
-      if (!msg?.text) return ok();
+const msg = update.message;
+if (!msg?.text) return ok();
 
-      const text   = msg.text.trim();
-      const chatId = msg.chat.id;
-      const userId = String(msg.from?.id || chatId);
+const text   = msg.text.trim();
+const chatId = msg.chat.id;
+const userId = String(msg.from?.id || chatId);
 
-      // Remember chats to notify on weekly job
-      await ensureUserChat(env, userId, chatId);
+// 🔒 Owner-only DMs
+const ownerId = String(env.OWNER_ID || "");
+if (chatIsPrivate(msg.chat) && ownerId && userId !== ownerId) {
+  await sendMessage(
+    env,
+    chatId,
+    "This bot is private. Please contact @kvg_dstrct11 to request access."
+  );
+  return ok();
+}
+
+// Remember chats to notify on weekly job
+await ensureUserChat(env, userId, chatId);
+
 
       // Group-friendly parsing: accept "/in@YourBot"
       const firstToken = text.split(/\s+/)[0];
@@ -234,6 +246,9 @@ async function sendDocument(env, chat_id, filename, content, mime = "text/csv"){
 function chatIsGroup(chat) {
   const t = (chat?.type || "").toLowerCase();
   return t === "group" || t === "supergroup";
+}
+function chatIsPrivate(chat) {
+  return (chat?.type || "").toLowerCase() === "private";
 }
 async function isChatAdmin(env, chatId, userId) {
   const data = await tgCall(env, "getChatMember", { chat_id: chatId, user_id: userId });
