@@ -5,7 +5,7 @@ workers_dev = true
 
 # Weekly cron: Saturday 23:59 PHT (= 15:59 UTC)
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["59 22 * * SAT"]
 
 # Bind your existing KV namespace
 [[kv_namespaces]]
