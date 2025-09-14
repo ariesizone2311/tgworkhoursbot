@@ -5,7 +5,7 @@ workers_dev = true
 
 # Weekly cron: Saturday 23:59 PHT (= 15:59 UTC)
 [triggers]
-crons = ["59 15 * * SAT"]
+crons = ["59 22 * * SAT"]
 
 # Bind your existing KV namespace
 [[kv_namespaces]]
@@ -13,5 +13,5 @@ binding = "HOURS"
 id = "b89428e4fdaa45f59e8bb9373c8392e5"
 
 [vars]
-TZ_OFFSET = "8"     # PHT (UTC+8)
+TZ_OFFSET = "1"     # UTC+1
 PAY_RATE  = "2.5"
