@@ -1,6 +1,7 @@
 // Work Hours Tracker — Cloudflare Workers + KV
 // Commands: /in /out /today /week /pay /help
-// Weekly cron: Sunday 23:00 UTC -> sends previous local week summary + CSV, then clears it
+// Weekly cron: Saturday 22:59 UTC (23:59 local when TZ_OFFSET=+1) -> sends previous local week summary + CSV, then clears it
+// -> sends previous local week summary + CSV, then clears it
 // KV: HOURS
 // ENV: BOT_TOKEN, SECRET_TOKEN
 // Optional ENV: TZ_OFFSET (hours, default 0), PAY_RATE (USD/hr, default 2.5), ADMIN_SECRET (for test URL)
@@ -48,6 +49,48 @@ export default {
       if (baseCmd === "/today") { await cmdToday(env, chatId, userId); return ok(); }
       if (baseCmd === "/week")  { await cmdWeek(env, chatId, userId); return ok(); }
       if (baseCmd === "/pay")   { await cmdPay(env, chatId, userId); return ok(); }
+// /setrate — DM: sets your own rate; Group: admin can set by replying to someone's message
+if (baseCmd === "/setrate") {
+  const args = text.split(/\s+/).slice(1);
+  if (!args.length) {
+    await sendMessage(env, chatId,
+      "Usage:\n• In DM: /setrate 2.75\n• In a group (admin): reply to a user’s message with /setrate 2.75");
+    return ok();
+  }
+  const desired = Number(args[0]);
+  if (!Number.isFinite(desired) || desired <= 0) {
+    await sendMessage(env, chatId, "Please provide a positive number, e.g. /setrate 2.5");
+    return ok();
+  }
+
+  // Target user: in group if replying, set that user; otherwise self
+  const isGroup = chatIsGroup(msg.chat);
+  const replyUserId = msg?.reply_to_message?.from?.id ? String(msg.reply_to_message.from.id) : null;
+  const targetUserId = isGroup && replyUserId ? replyUserId : userId;
+
+  // In groups, if setting someone else’s rate, require admin
+  if (isGroup && targetUserId !== userId) {
+    const admin = await isChatAdmin(env, chatId, userId).catch(() => false);
+    if (!admin) {
+      await sendMessage(env, chatId, "Only group admins can set other members’ rates (use /setrate as a reply).");
+      return ok();
+    }
+  }
+
+  try {
+    const v = await setUserRate(env, targetUserId, desired);
+    const who =
+      targetUserId === userId
+        ? "your"
+        : (msg?.reply_to_message?.from?.username
+            ? `@${msg.reply_to_message.from.username}`
+            : (msg?.reply_to_message?.from?.first_name || `ID ${targetUserId}`));
+    await sendMessage(env, chatId, `Set ${who} rate to $${v.toFixed(2)}/hr ✅`);
+  } catch {
+    await sendMessage(env, chatId, "Couldn’t set rate. Try a number like 2.5");
+  }
+  return ok();
+}
 
       await sendMessage(env, chatId, "Unknown command.\n" + helpText(env));
       return ok();
@@ -127,6 +170,29 @@ async function ensureUserChat(env, userId, chatId){
   const m = await getJSON(env.HOURS, kMeta(userId), { chats: [] });
   if (!m.chats.includes(chatId)) { m.chats.push(chatId); await putJSON(env.HOURS, kMeta(userId), m); }
 }
+// Per-user config (rate/TZ overrides)
+const kCfg = (u) => `cfg:${u}`;   // { rate?: number, tz?: number }
+
+async function getCfg(env, userId) {
+  return await getJSON(env.HOURS, kCfg(userId), {});
+}
+async function putCfg(env, userId, cfg) {
+  await putJSON(env.HOURS, kCfg(userId), cfg);
+}
+
+async function userRate(env, userId) {
+  const cfg = await getCfg(env, userId);
+  const r = Number(cfg.rate);
+  return Number.isFinite(r) ? r : rate(env); // fallback to global PAY_RATE
+}
+async function setUserRate(env, userId, newRate) {
+  const v = Number(newRate);
+  if (!Number.isFinite(v) || v <= 0) throw new Error("bad_rate");
+  const cfg = await getCfg(env, userId);
+  cfg.rate = v;
+  await putCfg(env, userId, cfg);
+  return v;
+}
 
 /* -------------------- Throttle + Telegram helpers -------------------- */
 // keep replies ≥1.1s apart per chat and retry once on 429/5xx
@@ -164,6 +230,15 @@ async function sendDocument(env, chat_id, filename, content, mime = "text/csv"){
   fd.append("chat_id", String(chat_id));
   fd.append("document", new File([content], filename, { type: mime }));
   return tgCall(env, "sendDocument", fd, true);
+}
+function chatIsGroup(chat) {
+  const t = (chat?.type || "").toLowerCase();
+  return t === "group" || t === "supergroup";
+}
+async function isChatAdmin(env, chatId, userId) {
+  const data = await tgCall(env, "getChatMember", { chat_id: chatId, user_id: userId });
+  const st = data?.result?.status;
+  return st === "creator" || st === "administrator";
 }
 
 /* -------------------- Commands -------------------- */
@@ -248,8 +323,9 @@ async function cmdWeek(env, chatId, userId){
     if (keyDay === todayKey) { const open = await getOpen(env, userId); if (open?.startUtcMs) t += utcMs - open.startUtcMs; }
     total += t; lines.push(`${keyDay}: ${fmtHM(t)}`);
   }
-  const mins = minutes(total), pay = money(dollarsFromMs(total, rate(env)));
-  return sendMessage(env, chatId, `This week: ${fmtHM(total)} (${mins} mins)\nPay @ $${rate(env).toFixed(2)}/hr: ${pay}\n` + lines.join("\n"));
+  const r = await userRate(env, userId);
+const mins = minutes(total), pay = money(dollarsFromMs(total, r));
+return sendMessage(env, chatId, `This week: ${fmtHM(total)} (${mins} mins)\nPay @ $${r.toFixed(2)}/hr: ${pay}\n` + lines.join("\n"));
 }
 
 async function cmdPay(env, chatId, userId){
@@ -264,8 +340,9 @@ async function cmdPay(env, chatId, userId){
     if (keyDay === todayKey) { const open = await getOpen(env, userId); if (open?.startUtcMs) t += utcMs - open.startUtcMs; }
     total += t;
   }
-  const mins = minutes(total), pay = money(dollarsFromMs(total, rate(env)));
-  return sendMessage(env, chatId, `Week total: ${fmtHM(total)} (${mins} mins)\nPay @ $${rate(env).toFixed(2)}/hr: ${pay}`);
+  const r = await userRate(env, userId);
+const mins = minutes(total), pay = money(dollarsFromMs(total, r));
+return sendMessage(env, chatId, `Week total: ${fmtHM(total)} (${mins} mins)\nPay @ $${r.toFixed(2)}/hr: ${pay}`);
 }
 
 /* -------------------- Weekly runner (cron + admin) -------------------- */
@@ -305,9 +382,15 @@ async function runWeekly(env){
         }
       }
 
-      const mins = minutes(total);
-      const pay  = money(dollarsFromMs(total, rate(env)));
-      const summary = `Weekly summary (last local week)\nTotal: ${fmtHM(total)} (${mins} mins)\nPay @ $${rate(env).toFixed(2)}/hr: ${pay}\n\n✅ Reset for new week.`;
+      const r = await userRate(env, userId);
+const mins = minutes(total);
+const pay  = money(dollarsFromMs(total, r));
+const summary = `Weekly summary (last local week)
+Total: ${fmtHM(total)} (${mins} mins)
+Pay @ $${r.toFixed(2)}/hr: ${pay}
+
+✅ Reset for new week.`;
+
 
       // CSV
       const csv = rows.map(r => r.map(x => {
